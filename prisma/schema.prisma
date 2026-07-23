@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Track {
+  id        String   @id @default(cuid())
+  path      String   @unique
+  filename  String
+
+  artist String?
+  title  String?
+  album  String?
+  year   Int?
+
+  durationSeconds Float?
+  bitrate         Int?
+  format          String?
+  fileSize        BigInt?
+
+  fileHash String? // SHA256, exact byte-for-byte duplicate detection
+
+  fingerprint         String? @db.Text // Chromaprint raw fingerprint, JSON-encoded int array
+  fingerprintDuration Float? // duration (s) actually used to compute the fingerprint
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fileHash])
+  @@index([artist, title])
+  @@index([durationSeconds])
+}
+
+// A scan is tracked as a job so the dashboard can show progress / last run
+// without blocking the HTTP request that triggered it.
+model ScanJob {
+  id          String   @id @default(cuid())
+  libraryPath String
+  status      String // "running" | "completed" | "failed"
+
+  filesFound   Int @default(0)
+  filesScanned Int @default(0)
+  filesAdded   Int @default(0)
+  filesUpdated Int @default(0)
+  filesFailed  Int @default(0)
+
+  error String?
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+}
