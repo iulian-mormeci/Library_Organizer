@@ -1,0 +1,39 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-music_dedup}:${POSTGRES_PASSWORD:-music_dedup}@postgres:5432/${POSTGRES_DB:-music_dedup}
+      LIBRARY_PATH: ${LIBRARY_PATH_IN_CONTAINER:-/music}
+      FPCALC_PATH: /usr/bin/fpcalc
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      # Example bind mount for local testing. In production, replace the
+      # host side with your real NFS mount from TrueNAS, e.g.:
+      #   /mnt/truenas/music:/music:ro
+      # mounted read-write only via a separate export if you want the
+      # "Elimina" button in the UI to actually remove files (see README /
+      # api/tracks/[id]/route.ts for why read-only blocks deletion).
+      - ${LIBRARY_PATH_ON_HOST:-./library-example}:/music:ro
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-music_dedup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-music_dedup}
+      POSTGRES_DB: ${POSTGRES_DB:-music_dedup}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-music_dedup}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
