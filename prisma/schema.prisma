@@ -48,6 +48,13 @@ model ScanJob {
   filesUpdated Int @default(0)
   filesFailed  Int @default(0)
 
+  // Live progress, polled by the dashboard while status = "running".
+  // totalFiles is nullable because it's only known once the initial
+  // directory walk completes.
+  totalFiles     Int?
+  processedFiles Int     @default(0)
+  currentFile    String?
+
   error String?
 
   startedAt  DateTime  @default(now())

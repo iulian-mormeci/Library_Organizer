@@ -54,15 +54,18 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ jobId: job.id, status: "running" }, { status: 202 });
 }
 
-async function runScanInBackground(jobId: string, libraryPath: string) {
-  let lastPersist = 0;
-  const PERSIST_INTERVAL_MS = 2000;
+// Persisting progress on every single file would mean an extra DB
+// round-trip per track, which adds up on large libraries. Every 5 files is
+// frequent enough for the dashboard to feel live without slowing the scan.
+const PERSIST_EVERY_N_FILES = 5;
 
+async function runScanInBackground(jobId: string, libraryPath: string) {
   try {
     const result = await scanLibrary(libraryPath, async (progress) => {
-      const now = Date.now();
-      if (now - lastPersist < PERSIST_INTERVAL_MS) return;
-      lastPersist = now;
+      const isFirst = progress.filesScanned === 0;
+      const isLast = progress.filesScanned === progress.filesFound;
+      if (!isFirst && !isLast && progress.filesScanned % PERSIST_EVERY_N_FILES !== 0) return;
+
       await prisma.scanJob.update({
         where: { id: jobId },
         data: {
@@ -71,6 +74,9 @@ async function runScanInBackground(jobId: string, libraryPath: string) {
           filesAdded: progress.filesAdded,
           filesUpdated: progress.filesUpdated,
           filesFailed: progress.filesFailed,
+          totalFiles: progress.filesFound,
+          processedFiles: progress.filesScanned,
+          currentFile: progress.currentFile,
         },
       });
     });
@@ -85,6 +91,9 @@ async function runScanInBackground(jobId: string, libraryPath: string) {
         filesAdded: result.filesAdded,
         filesUpdated: result.filesUpdated,
         filesFailed: result.filesFailed,
+        totalFiles: result.filesFound,
+        processedFiles: result.filesScanned,
+        currentFile: null,
       },
     });
   } catch (err) {

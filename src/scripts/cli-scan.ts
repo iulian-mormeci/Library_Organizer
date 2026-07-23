@@ -24,12 +24,27 @@ async function main() {
     data: { libraryPath, status: "running" },
   });
 
+  const PERSIST_EVERY_N_FILES = 5;
+
   try {
-    const result = await scanLibrary(libraryPath, (progress) => {
+    const result = await scanLibrary(libraryPath, async (progress) => {
       process.stdout.write(
         `\r[cli-scan] scanned ${progress.filesScanned}/${progress.filesFound} ` +
           `(added ${progress.filesAdded}, updated ${progress.filesUpdated}, failed ${progress.filesFailed})`,
       );
+
+      const isFirst = progress.filesScanned === 0;
+      const isLast = progress.filesScanned === progress.filesFound;
+      if (!isFirst && !isLast && progress.filesScanned % PERSIST_EVERY_N_FILES !== 0) return;
+
+      await prisma.scanJob.update({
+        where: { id: job.id },
+        data: {
+          totalFiles: progress.filesFound,
+          processedFiles: progress.filesScanned,
+          currentFile: progress.currentFile,
+        },
+      });
     });
 
     await prisma.scanJob.update({
@@ -42,6 +57,9 @@ async function main() {
         filesAdded: result.filesAdded,
         filesUpdated: result.filesUpdated,
         filesFailed: result.filesFailed,
+        totalFiles: result.filesFound,
+        processedFiles: result.filesScanned,
+        currentFile: null,
       },
     });
 

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { ScanButton } from "@/components/ScanButton";
+import { ScanPanel, ScanStatus } from "@/components/ScanPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +31,19 @@ export default async function DashboardPage() {
     prisma.scanJob.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
   ]);
 
+  const initialStatus: ScanStatus | null = lastJob
+    ? {
+        id: lastJob.id,
+        status: lastJob.status,
+        totalFiles: lastJob.totalFiles,
+        processedFiles: lastJob.processedFiles,
+        currentFile: lastJob.currentFile,
+        startedAt: lastJob.startedAt.toISOString(),
+        finishedAt: lastJob.finishedAt?.toISOString() ?? null,
+        error: lastJob.error,
+      }
+    : null;
+
   return (
     <div className="space-y-8">
       <section>
@@ -55,13 +68,14 @@ export default async function DashboardPage() {
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-lg font-medium">Nuova scansione</h2>
+        <h2 className="text-lg font-medium">Scansione</h2>
         <p className="mt-1 text-sm text-slate-400">
           Avvia una scansione del percorso configurato in <code>LIBRARY_PATH</code>. Viene eseguita
-          in background: puoi lasciare questa pagina e tornare più tardi.
+          in background: puoi lasciare questa pagina e tornare più tardi, oppure seguirne
+          l&apos;avanzamento qui in tempo reale.
         </p>
         <div className="mt-4">
-          <ScanButton />
+          <ScanPanel initialStatus={initialStatus} />
         </div>
       </section>
 

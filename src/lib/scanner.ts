@@ -27,6 +27,8 @@ export interface ScanProgress {
   filesAdded: number;
   filesUpdated: number;
   filesFailed: number;
+  /** Basename of the file most recently picked up by a worker (best-effort — several workers run concurrently). */
+  currentFile?: string;
 }
 
 export type ScanProgressCallback = (progress: ScanProgress) => void | Promise<void>;
@@ -148,6 +150,7 @@ export async function scanLibrary(
     while (cursor < files.length) {
       const filePath = files[cursor];
       cursor += 1;
+      progress.currentFile = path.basename(filePath);
 
       try {
         const data = await extractTrackData(filePath);
