@@ -5,6 +5,20 @@ RUN npm install --no-audit --no-fund
 
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
+
+# node:20-bookworm-slim doesn't pull in a system libssl by default (Node
+# statically bundles its own OpenSSL). Without it, `prisma generate`'s
+# auto-detection of the "native" engine target can't reliably probe the
+# platform's actual OpenSSL version — installing it here, before
+# `prisma generate` runs, keeps detection accurate and matches the runner
+# stage below. binaryTargets in schema.prisma is the real safety net
+# either way: it bundles the debian-openssl-3.0.x engine explicitly, so
+# generation is correct even if this detection step were ever skipped.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate

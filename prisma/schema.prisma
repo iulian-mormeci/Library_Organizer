@@ -1,5 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  // "native" covers local dev (macOS/whatever the host is). The Docker
+  // image's builder and runner stages both use node:20-bookworm-slim
+  // (Debian 12, OpenSSL 3.0), but that auto-detected "native" target is
+  // only as reliable as the builder stage's ability to probe libssl at
+  // `prisma generate` time — listing debian-openssl-3.0.x explicitly means
+  // the right query engine is always bundled regardless of that detection.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
