@@ -14,11 +14,18 @@ services:
     volumes:
       # Example bind mount for local testing. In production, replace the
       # host side with your real NFS mount from TrueNAS, e.g.:
-      #   /mnt/truenas/music:/music:ro
-      # mounted read-write only via a separate export if you want the
-      # "Elimina" button in the UI to actually remove files (see README /
-      # api/tracks/[id]/route.ts for why read-only blocks deletion).
-      - ${LIBRARY_PATH_ON_HOST:-./library-example}:/music:ro
+      #   /mnt/truenas/music:/music
+      #
+      # LIBRARY_MOUNT_MODE controls the bind mount itself (Docker enforces
+      # this at the container's mount namespace, independently of whatever
+      # permissions the underlying NFS export actually has) — it defaults
+      # to "ro" for safety. Setting LIBRARY_MOUNT_MODE=rw in .env is
+      # required for the "Elimina" button in the UI to actually remove
+      # files (see src/app/api/tracks/[id]/route.ts); after changing it,
+      # recreate the container with `docker compose up -d` for the new
+      # mount option to take effect — an already-running container keeps
+      # whatever mode it started with.
+      - ${LIBRARY_PATH_ON_HOST:-./library-example}:/music:${LIBRARY_MOUNT_MODE:-ro}
 
   postgres:
     image: postgres:16-alpine
