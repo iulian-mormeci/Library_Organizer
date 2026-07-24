@@ -39,20 +39,36 @@ export function DuplicateTrackRow({
     if (!confirm(`Eliminare definitivamente il file?\n${track.path}`)) return;
     setPending(true);
     setError(null);
+
+    // Network failure (server unreachable, connection reset, etc.) — fetch()
+    // itself rejects here, before there's any Response to inspect.
+    let res: Response;
     try {
-      const res = await fetch(`/api/tracks/${track.id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Eliminazione fallita");
-      } else {
-        setDeleted(true);
-        router.refresh();
-      }
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
+      res = await fetch(`/api/tracks/${track.id}`, { method: "DELETE" });
+    } catch {
+      setError("Impossibile contattare il server. Controlla la connessione e riprova.");
       setPending(false);
+      return;
     }
+
+    // The body may not be valid JSON (e.g. a proxy/HTML error page for a
+    // 502/504) — don't let a parse failure here throw past this handler.
+    let data: { error?: string } = {};
+    try {
+      data = await res.json();
+    } catch {
+      // fall through, we still have res.ok / res.status to report on
+    }
+
+    if (!res.ok) {
+      setError(data.error ?? `Eliminazione fallita (HTTP ${res.status})`);
+      setPending(false);
+      return;
+    }
+
+    setDeleted(true);
+    setPending(false);
+    router.refresh();
   }
 
   if (deleted) {
