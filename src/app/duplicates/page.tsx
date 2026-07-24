@@ -1,4 +1,5 @@
-import { detectDuplicates, DetectionLevel } from "@/lib/dedup";
+import { DetectionLevel, DuplicateGroup } from "@/lib/dedup";
+import { getPersistedDuplicateGroups } from "@/lib/duplicateCompute";
 import { pickBestTrack } from "@/lib/trackQuality";
 import { DuplicateTrackRow, ClientTrack } from "@/components/DuplicateTrackRow";
 
@@ -16,7 +17,7 @@ const LEVEL_STYLES: Record<DetectionLevel, string> = {
   fingerprint: "bg-sky-500/20 text-sky-300",
 };
 
-function toClientTrack(track: Awaited<ReturnType<typeof detectDuplicates>>[number]["tracks"][number]): ClientTrack {
+function toClientTrack(track: DuplicateGroup["tracks"][number]): ClientTrack {
   return {
     id: track.id,
     path: track.path,
@@ -31,17 +32,24 @@ function toClientTrack(track: Awaited<ReturnType<typeof detectDuplicates>>[numbe
   };
 }
 
+function formatDate(date: Date | null): string {
+  if (!date) return "mai";
+  return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 export default async function DuplicatesPage() {
-  const groups = await detectDuplicates();
+  const { computedAt, groups } = await getPersistedDuplicateGroups();
 
   return (
     <div className="space-y-8">
       <section>
         <h1 className="text-2xl font-semibold">Duplicati</h1>
         <p className="mt-1 text-sm text-slate-400">
-          {groups.length === 0
-            ? "Nessun duplicato trovato."
-            : `${groups.length} gruppi di duplicati trovati.`}
+          {computedAt === null
+            ? "Nessun calcolo duplicati eseguito ancora. Avvia una scansione dalla dashboard (il ricalcolo parte automaticamente al termine), oppure lancia un ricalcolo manuale."
+            : groups.length === 0
+              ? `Nessun duplicato trovato (ultimo calcolo: ${formatDate(computedAt)}).`
+              : `${groups.length} gruppi di duplicati trovati (ultimo calcolo: ${formatDate(computedAt)}).`}
         </p>
       </section>
 

@@ -26,6 +26,85 @@ export const DEFAULT_DEDUP_OPTIONS: DedupOptions = {
 };
 
 // ---------------------------------------------------------------------------
+// Shared: duration-windowed pairwise grouping
+// ---------------------------------------------------------------------------
+//
+// Both the fuzzy-metadata and fingerprint levels need to find clusters of
+// "similar" items among candidates, and both are too expensive to run as a
+// full O(n^2) pairwise scan over a real library (e.g. ~32M comparisons for
+// 8k tracks, each doing an O(length^2) Levenshtein or a 32*n-bit Hamming
+// distance — this is what blocks the event loop for minutes).
+//
+// Two files that are genuinely the same recording (re-tagged, re-encoded, a
+// light remaster) almost always have near-identical duration, so sorting
+// candidates by duration and only comparing each item against others within
+// `durationToleranceSeconds` turns this into O(n log n + n * avg-window-size)
+// — the same "duration bucket ± tolerance" idea, implemented as a sliding
+// window over sorted durations rather than discrete buckets so items right
+// on a bucket boundary (e.g. 10.9s / 11.1s) never get missed.
+//
+// Items with unknown duration can't use the window (nothing to sort them
+// by), so they fall back to a full pairwise scan among themselves — safe
+// because tracks with missing duration metadata are expected to be a small
+// minority, not the bulk of the library.
+
+interface DurationWindowItem {
+  id: string;
+  durationSeconds: number | null;
+}
+
+function groupByDurationWindow<T extends DurationWindowItem>(
+  items: T[],
+  durationToleranceSeconds: number,
+  isMatch: (a: T, b: T) => { matches: boolean; confidence: number },
+): Array<{ items: T[]; confidence: number }> {
+  const withDuration = items.filter((item) => item.durationSeconds !== null);
+  const withoutDuration = items.filter((item) => item.durationSeconds === null);
+  withDuration.sort((a, b) => (a.durationSeconds ?? 0) - (b.durationSeconds ?? 0));
+
+  const visited = new Set<string>();
+  const groups: Array<{ items: T[]; confidence: number }> = [];
+
+  function scan(pool: T[], useWindow: boolean) {
+    for (let i = 0; i < pool.length; i++) {
+      const a = pool[i];
+      if (visited.has(a.id)) continue;
+
+      const bucket: T[] = [a];
+      let worstConfidence = 1;
+      const durationA = a.durationSeconds ?? 0;
+
+      for (let j = i + 1; j < pool.length; j++) {
+        const b = pool[j];
+
+        if (useWindow) {
+          const durationB = b.durationSeconds ?? 0;
+          if (durationB - durationA > durationToleranceSeconds) break; // sorted: no more candidates possible
+        }
+        if (visited.has(b.id)) continue;
+
+        const { matches, confidence } = isMatch(a, b);
+        if (matches) {
+          bucket.push(b);
+          visited.add(b.id);
+          worstConfidence = Math.min(worstConfidence, confidence);
+        }
+      }
+
+      if (bucket.length > 1) {
+        visited.add(a.id);
+        groups.push({ items: bucket, confidence: worstConfidence });
+      }
+    }
+  }
+
+  scan(withDuration, true);
+  scan(withoutDuration, false);
+
+  return groups;
+}
+
+// ---------------------------------------------------------------------------
 // Level 1: exact hash
 // ---------------------------------------------------------------------------
 
@@ -104,41 +183,29 @@ function trackSignature(track: Track): string {
 
 export function findFuzzyMetadataDuplicates(
   tracks: Track[],
-  options: Pick<DedupOptions, "fuzzyThreshold"> = DEFAULT_DEDUP_OPTIONS,
+  options: Pick<DedupOptions, "fuzzyThreshold" | "durationToleranceSeconds"> = DEFAULT_DEDUP_OPTIONS,
 ): DuplicateGroup[] {
-  const candidates = tracks.filter((t) => t.artist && t.title);
-  const visited = new Set<string>();
-  const groups: DuplicateGroup[] = [];
+  // Normalization is regex-heavy; precompute each candidate's signature once
+  // instead of redoing it on every pairwise comparison inside the window.
+  const candidates = tracks
+    .filter((t) => t.artist && t.title)
+    .map((track) => ({
+      id: track.id,
+      durationSeconds: track.durationSeconds,
+      track,
+      signature: trackSignature(track),
+    }));
 
-  for (let i = 0; i < candidates.length; i++) {
-    const a = candidates[i];
-    if (visited.has(a.id)) continue;
+  const grouped = groupByDurationWindow(candidates, options.durationToleranceSeconds, (a, b) => {
+    const distance = normalizedLevenshtein(a.signature, b.signature);
+    return { matches: distance <= options.fuzzyThreshold, confidence: 1 - distance };
+  });
 
-    const sigA = trackSignature(a);
-    const bucket: Track[] = [a];
-    let worstSimilarity = 1;
-
-    for (let j = i + 1; j < candidates.length; j++) {
-      const b = candidates[j];
-      if (visited.has(b.id)) continue;
-
-      const sigB = trackSignature(b);
-      const distance = normalizedLevenshtein(sigA, sigB);
-
-      if (distance <= options.fuzzyThreshold) {
-        bucket.push(b);
-        visited.add(b.id);
-        worstSimilarity = Math.min(worstSimilarity, 1 - distance);
-      }
-    }
-
-    if (bucket.length > 1) {
-      visited.add(a.id);
-      groups.push({ level: "fuzzy-metadata", confidence: worstSimilarity, tracks: bucket });
-    }
-  }
-
-  return groups;
+  return grouped.map((g) => ({
+    level: "fuzzy-metadata",
+    confidence: g.confidence,
+    tracks: g.items.map((item) => item.track),
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -183,47 +250,19 @@ export function findFingerprintDuplicates(
   > = DEFAULT_DEDUP_OPTIONS,
 ): DuplicateGroup[] {
   const candidates = tracks
-    .map((t) => ({ track: t, fp: parseFingerprint(t.fingerprint) }))
-    .filter((c): c is { track: Track; fp: number[] } => c.fp !== null && c.fp.length > 0);
+    .map((track) => ({ id: track.id, durationSeconds: track.durationSeconds, track, fp: parseFingerprint(track.fingerprint) }))
+    .filter((c): c is { id: string; durationSeconds: number | null; track: Track; fp: number[] } => c.fp !== null && c.fp.length > 0);
 
-  // Sort by duration so we only need to scan a local window for candidates
-  // within tolerance, instead of an O(n^2) scan over the whole library.
-  candidates.sort((a, b) => (a.track.durationSeconds ?? 0) - (b.track.durationSeconds ?? 0));
+  const grouped = groupByDurationWindow(candidates, options.durationToleranceSeconds, (a, b) => {
+    const similarity = fingerprintSimilarity(a.fp, b.fp);
+    return { matches: similarity >= options.fingerprintSimilarityThreshold, confidence: similarity };
+  });
 
-  const visited = new Set<string>();
-  const groups: DuplicateGroup[] = [];
-
-  for (let i = 0; i < candidates.length; i++) {
-    const a = candidates[i];
-    if (visited.has(a.track.id)) continue;
-
-    const bucket: Track[] = [a.track];
-    let worstSimilarity = 1;
-    const durationA = a.track.durationSeconds ?? 0;
-
-    for (let j = i + 1; j < candidates.length; j++) {
-      const b = candidates[j];
-      const durationB = b.track.durationSeconds ?? 0;
-
-      if (durationB - durationA > options.durationToleranceSeconds) break; // sorted, no more candidates possible
-      if (visited.has(b.track.id)) continue;
-      if (Math.abs(durationB - durationA) > options.durationToleranceSeconds) continue;
-
-      const similarity = fingerprintSimilarity(a.fp, b.fp);
-      if (similarity >= options.fingerprintSimilarityThreshold) {
-        bucket.push(b.track);
-        visited.add(b.track.id);
-        worstSimilarity = Math.min(worstSimilarity, similarity);
-      }
-    }
-
-    if (bucket.length > 1) {
-      visited.add(a.track.id);
-      groups.push({ level: "fingerprint", confidence: worstSimilarity, tracks: bucket });
-    }
-  }
-
-  return groups;
+  return grouped.map((g) => ({
+    level: "fingerprint",
+    confidence: g.confidence,
+    tracks: g.items.map((item) => item.track),
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +274,10 @@ export function findFingerprintDuplicates(
  * first. Tracks already grouped by a cheaper/stronger level are excluded
  * from the more expensive levels below, so the same pair of files isn't
  * reported three times over.
+ *
+ * This is CPU-heavy even with the duration-window optimization above, so
+ * callers must run it as a background job (see src/lib/duplicateCompute.ts)
+ * rather than synchronously inside an HTTP request handler.
  */
 export async function detectDuplicates(
   options: Partial<DedupOptions> = {},

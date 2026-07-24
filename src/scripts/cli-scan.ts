@@ -6,6 +6,7 @@
  */
 import { prisma } from "../lib/db";
 import { scanLibrary } from "../lib/scanner";
+import { computeAndPersistDuplicates } from "../lib/duplicateCompute";
 
 async function main() {
   const libraryPath = process.argv[2] ?? process.env.LIBRARY_PATH;
@@ -65,6 +66,19 @@ async function main() {
 
     const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
     console.log(`\n[cli-scan] done in ${elapsedSec}s:`, result);
+
+    // Recompute duplicates now that the library changed. Unlike the API
+    // route (which fires this off in the background and returns), this
+    // process is about to exit, so it must be awaited here or the
+    // computation would be killed before it finishes.
+    console.log("[cli-scan] recomputing duplicate groups...");
+    const dupJob = await prisma.duplicateComputeJob.create({ data: { status: "running" } });
+    try {
+      const { groupCount } = await computeAndPersistDuplicates(dupJob.id);
+      console.log(`[cli-scan] duplicate recompute done: ${groupCount} groups`);
+    } catch (err) {
+      console.error("[cli-scan] duplicate recompute failed:", (err as Error).message);
+    }
   } catch (err) {
     await prisma.scanJob.update({
       where: { id: job.id },

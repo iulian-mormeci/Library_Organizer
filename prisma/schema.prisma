@@ -60,3 +60,34 @@ model ScanJob {
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
 }
+
+// Duplicate detection is too expensive to run synchronously inside a
+// request handler (pairwise Levenshtein/fingerprint comparisons over the
+// whole library), so it runs as a background job — same pattern as
+// ScanJob — and its output is persisted here instead of being
+// recomputed on every GET /api/duplicates.
+model DuplicateComputeJob {
+  id     String @id @default(cuid())
+  status String // "running" | "completed" | "failed"
+
+  groupCount Int     @default(0)
+  error      String?
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+}
+
+// One row per detected duplicate group from the most recent completed
+// DuplicateComputeJob. trackIds references Track.id but isn't a formal
+// Prisma relation (kept simple, same as ScanJob's loose coupling to
+// Track) — reads batch-fetch the referenced tracks in one query.
+model DuplicateGroupResult {
+  id         String   @id @default(cuid())
+  jobId      String
+  level      String // "exact-hash" | "fuzzy-metadata" | "fingerprint"
+  confidence Float
+  trackIds   String[]
+  computedAt DateTime @default(now())
+
+  @@index([jobId])
+}

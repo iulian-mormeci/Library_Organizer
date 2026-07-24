@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { scanLibrary } from "@/lib/scanner";
+import { triggerDuplicateRecompute } from "@/lib/duplicateCompute";
 
 // Module-level guard: prevents two scans running concurrently against the
 // same Node process (e.g. a user double-clicking "scan" in the dashboard).
@@ -96,6 +97,14 @@ async function runScanInBackground(jobId: string, libraryPath: string) {
         currentFile: null,
       },
     });
+
+    // Library contents just changed — keep the persisted duplicate results
+    // from going stale. Fire-and-forget: this is its own background job,
+    // scan completion shouldn't wait on it.
+    const recomputeResult = await triggerDuplicateRecompute();
+    if ("error" in recomputeResult) {
+      console.warn("[api/scan] duplicate recompute not triggered:", recomputeResult.error);
+    }
   } catch (err) {
     console.error("[api/scan] background scan failed:", err);
     await prisma.scanJob.update({

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { ScanPanel, ScanStatus } from "@/components/ScanPanel";
+import { RecomputeDuplicatesButton, RecomputeJob } from "@/components/RecomputeDuplicatesButton";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +26,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default async function DashboardPage() {
-  const [trackCount, lastJob, recentJobs] = await Promise.all([
+  const [trackCount, lastJob, recentJobs, lastDupJob] = await Promise.all([
     prisma.track.count(),
     prisma.scanJob.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.scanJob.findMany({ orderBy: { startedAt: "desc" }, take: 5 }),
+    prisma.duplicateComputeJob.findFirst({ orderBy: { startedAt: "desc" } }),
   ]);
 
   const initialStatus: ScanStatus | null = lastJob
@@ -41,6 +43,17 @@ export default async function DashboardPage() {
         startedAt: lastJob.startedAt.toISOString(),
         finishedAt: lastJob.finishedAt?.toISOString() ?? null,
         error: lastJob.error,
+      }
+    : null;
+
+  const initialDupJob: RecomputeJob | null = lastDupJob
+    ? {
+        id: lastDupJob.id,
+        status: lastDupJob.status,
+        groupCount: lastDupJob.groupCount,
+        error: lastDupJob.error,
+        startedAt: lastDupJob.startedAt.toISOString(),
+        finishedAt: lastDupJob.finishedAt?.toISOString() ?? null,
       }
     : null;
 
@@ -76,6 +89,22 @@ export default async function DashboardPage() {
         </p>
         <div className="mt-4">
           <ScanPanel initialStatus={initialStatus} />
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+        <h2 className="text-lg font-medium">Duplicati</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Il calcolo dei duplicati gira come job separato (parte automaticamente a fine
+          scansione) e la pagina{" "}
+          <a href="/duplicates" className="underline hover:text-slate-300">
+            Duplicati
+          </a>{" "}
+          legge sempre l&apos;ultimo risultato già calcolato. Usa questo bottone per forzare un
+          ricalcolo senza aspettare una nuova scansione.
+        </p>
+        <div className="mt-4">
+          <RecomputeDuplicatesButton initialJob={initialDupJob} />
         </div>
       </section>
 
