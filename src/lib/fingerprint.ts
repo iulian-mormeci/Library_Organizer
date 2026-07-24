@@ -37,20 +37,44 @@ export function getFingerprint(filePath: string): Promise<FpcalcResult> {
 
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (code !== 0) {
-        reject(new Error(`fpcalc exited with code ${code} for ${filePath}: ${stderr.trim()}`));
+
+      // fpcalc can exit non-zero (e.g. code 3, "Error decoding audio frame")
+      // on malformed trailing frames while still printing a complete, usable
+      // JSON fingerprint for the rest of the file — so the exit code alone
+      // isn't a reliable failure signal. Always try to parse stdout first
+      // and only treat this as an error if that fails or yields no
+      // fingerprint; a non-zero code alongside a valid fingerprint is just
+      // logged as a warning.
+      let parsed: { duration: number; fingerprint: string | number[] };
+      try {
+        parsed = JSON.parse(stdout);
+      } catch (err) {
+        reject(
+          new Error(
+            `fpcalc produced no valid JSON for ${filePath} (exit code ${code}): ${stderr.trim() || (err as Error).message}`,
+          ),
+        );
         return;
       }
 
-      try {
-        const parsed = JSON.parse(stdout) as { duration: number; fingerprint: string | number[] };
-        const fingerprint = Array.isArray(parsed.fingerprint)
-          ? parsed.fingerprint
-          : parsed.fingerprint.split(",").map(Number);
-        resolve({ duration: parsed.duration, fingerprint });
-      } catch (err) {
-        reject(new Error(`failed to parse fpcalc output for ${filePath}: ${(err as Error).message}`));
+      const fingerprint = Array.isArray(parsed.fingerprint)
+        ? parsed.fingerprint
+        : (parsed.fingerprint ?? "").split(",").filter(Boolean).map(Number);
+
+      if (fingerprint.length === 0) {
+        reject(
+          new Error(`fpcalc returned an empty fingerprint for ${filePath} (exit code ${code}): ${stderr.trim()}`),
+        );
+        return;
       }
+
+      if (code !== 0) {
+        console.warn(
+          `[fingerprint] fpcalc exited with code ${code} for ${filePath} but still produced a fingerprint; audio file may have decoding issues: ${stderr.trim()}`,
+        );
+      }
+
+      resolve({ duration: parsed.duration, fingerprint });
     });
   });
 }
