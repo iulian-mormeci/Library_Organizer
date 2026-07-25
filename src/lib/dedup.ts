@@ -242,6 +242,29 @@ export function fingerprintSimilarity(a: number[], b: number[]): number {
   return matchingBits / (len * 32);
 }
 
+// A fingerprint group's confidence is matchingBits / (len * 32) — an exact
+// ratio of two integers, so when every compared bit matches, JS floating
+// point represents that as precisely 1, not something that merely rounds
+// to 1. `=== EXACT_FINGERPRINT_SIMILARITY` is therefore a real equality
+// check, not a "close enough" threshold with its own rounding risk.
+//
+// Note the one real caveat: fingerprintSimilarity only compares the
+// overlapping prefix (`Math.min(a.length, b.length)`) of the two raw
+// fingerprints. Two tracks whose *shared* duration is bit-for-bit
+// identical but whose total lengths differ (e.g. one has a couple of
+// extra seconds of trailing silence) can still land here. In practice
+// this needs the pair to already be within the ±duration-tolerance
+// bucket (see groupByDurationWindow) to have been compared at all, so
+// the discrepancy this could hide is on the order of a fraction of a
+// second — not enough to be a different song, but worth knowing this
+// isn't a full-length comparison.
+export const EXACT_FINGERPRINT_SIMILARITY = 1;
+
+/** True only for a fingerprint-level group whose *worst* pairwise match (see groupByDurationWindow) is exactly EXACT_FINGERPRINT_SIMILARITY — i.e. every track pair in the group is audio-identical, not merely very similar. */
+export function isExactFingerprintMatch(group: DuplicateGroup): boolean {
+  return group.level === "fingerprint" && group.confidence === EXACT_FINGERPRINT_SIMILARITY;
+}
+
 export function findFingerprintDuplicates(
   tracks: Track[],
   options: Pick<

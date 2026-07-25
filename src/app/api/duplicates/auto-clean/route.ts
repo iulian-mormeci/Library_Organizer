@@ -6,13 +6,15 @@ import { triggerDuplicateRecompute } from "@/lib/duplicateCompute";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/duplicates/auto-clean — deletes every track in an
- * exact-hash-only duplicate group except the one "consigliata" pick, per
- * group (see src/lib/autoClean.ts for why the level is hard-coded, not a
- * parameter). Deletion itself reuses bulkDeleteTracks — the same mechanism
- * as POST /api/tracks/bulk-delete — so concurrency, permission handling,
- * and partial-failure behavior are identical and defined in exactly one
- * place.
+ * POST /api/duplicates/auto-clean — deletes every track except the one
+ * "consigliata" pick in each duplicate group that qualifies as risk-free:
+ * an exact SHA256 hash match, or a fingerprint match at exactly 100%
+ * similarity (every compared bit identical — not 95-99%). See
+ * isAutoCleanEligible in src/lib/autoClean.ts for why this is a hard
+ * boolean check, not a parameter a caller could loosen. Deletion itself
+ * reuses bulkDeleteTracks — the same mechanism as POST
+ * /api/tracks/bulk-delete — so concurrency, permission handling, and
+ * partial-failure behavior are identical and defined in exactly one place.
  *
  * Body: { dryRun?: boolean }
  *   dryRun defaults to true — an empty/missing body only computes and

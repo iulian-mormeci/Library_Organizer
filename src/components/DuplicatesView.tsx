@@ -25,17 +25,51 @@ interface AutoCleanPreview {
   bytesToFree: string;
 }
 
-const LEVEL_LABELS: Record<DetectionLevel, string> = {
-  "exact-hash": "Hash identico (copia byte-per-byte)",
-  "fuzzy-metadata": "Metadati simili (artista/titolo)",
-  fingerprint: "Fingerprint audio simile",
-};
+// The "confidence" number means something different per level (it's always
+// exactly 1 for exact-hash — a hash either matches or it doesn't, there's
+// no gradation — but it's a Hamming similarity for fingerprint and
+// 1-minus-normalized-Levenshtein for fuzzy-metadata, both of which can
+// legitimately read 99-100% for files that are NOT byte-identical, e.g. the
+// same recording losslessly re-encoded with different tags). Labeling all
+// three as generic "confidenza X%" made a fingerprint match look exactly as
+// authoritative as an actual hash match, which mattered a lot once
+// auto-clean started also touching fingerprint groups — but only the ones
+// at exactly 100%, never 95-99%.
+//
+// This mirrors isAutoCleanEligible in src/lib/autoClean.ts (which is the
+// actual authority — this is UI-only) as a plain literal comparison rather
+// than an import: dedup.ts pulls in the Prisma client, which can't be part
+// of a client component's bundle.
+function isAutoCleanEligibleClient(group: ClientGroup): boolean {
+  return group.level === "exact-hash" || (group.level === "fingerprint" && group.confidence === 1);
+}
 
-const LEVEL_STYLES: Record<DetectionLevel, string> = {
-  "exact-hash": "bg-red-500/20 text-red-300",
-  "fuzzy-metadata": "bg-amber-500/20 text-amber-300",
-  fingerprint: "bg-sky-500/20 text-sky-300",
-};
+function groupLabel(group: ClientGroup): string {
+  if (group.level === "exact-hash") return "Identico byte-per-byte";
+  if (group.level === "fingerprint") {
+    return group.confidence === 1 ? "Audio identico (fingerprint 100%)" : "Stesso audio — fingerprint simile";
+  }
+  return "Probabile duplicato — metadati simili";
+}
+
+function groupStyle(group: ClientGroup): string {
+  if (isAutoCleanEligibleClient(group)) return "bg-emerald-500/20 text-emerald-300";
+  if (group.level === "fingerprint") return "bg-sky-500/20 text-sky-300";
+  return "bg-amber-500/20 text-amber-300";
+}
+
+function levelMetricLabel(group: ClientGroup): string {
+  switch (group.level) {
+    case "exact-hash":
+      return "hash SHA256 uguale — copia esatta, zero ambiguità";
+    case "fingerprint":
+      return group.confidence === 1
+        ? "similarity audio: 100% — nessuna differenza percettibile rilevata"
+        : `somiglianza audio (fingerprint): ${(group.confidence * 100).toFixed(0)}%`;
+    case "fuzzy-metadata":
+      return `somiglianza testo (artista/titolo): ${(group.confidence * 100).toFixed(0)}%`;
+  }
+}
 
 // Client-side chunking is what makes "120/300 elaborate" progress possible
 // from an endpoint whose contract is a plain synchronous summary response
@@ -187,7 +221,9 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
         return;
       }
       if (data.tracks.length === 0) {
-        setAutoCleanMessage("Nessun duplicato esatto (hash identico) da eliminare al momento.");
+        setAutoCleanMessage(
+          "Nessun duplicato sicuro (hash identico o audio identico al 100%) da eliminare al momento.",
+        );
         return;
       }
       setAutoCleanPreview(data);
@@ -215,12 +251,13 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
   return (
     <div className="space-y-8 pb-24">
       <section className="rounded-lg border border-emerald-900 bg-emerald-950/20 p-5">
-        <h2 className="text-lg font-medium text-emerald-100">Pulizia automatica duplicati esatti</h2>
+        <h2 className="text-lg font-medium text-emerald-100">Pulizia automatica duplicati</h2>
         <p className="mt-1 text-sm text-emerald-200/70">
-          Elimina automaticamente i file identici byte-per-byte (hash SHA256 uguale), tenendo sempre la
-          copia migliore di ciascun gruppo. Sicuro al 100%, nessuna ambiguità: i gruppi rilevati solo da
-          metadati simili o fingerprint audio non vengono mai toccati da questo bottone e restano da
-          rivedere qui sotto manualmente.
+          Elimina automaticamente i duplicati identici byte-per-byte o con audio identico al 100%
+          (fingerprint), tenendo sempre la copia migliore. Sicuro al 100%, nessuna ambiguità: qualunque
+          gruppo con somiglianza inferiore al 100% — anche di un solo punto percentuale, sia fingerprint
+          che metadati — non viene mai toccato da questo bottone e resta da rivedere qui sotto
+          manualmente.
         </p>
         <div className="mt-4 flex items-center gap-3">
           <button
@@ -228,7 +265,7 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
             disabled={autoCleanLoading || deleting}
             className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {autoCleanLoading ? "Calcolo anteprima…" : "Pulizia automatica duplicati esatti"}
+            {autoCleanLoading ? "Calcolo anteprima…" : "Pulizia automatica duplicati"}
           </button>
           {autoCleanMessage && <span className="text-sm text-emerald-200/70">{autoCleanMessage}</span>}
         </div>
@@ -305,13 +342,20 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
       {groups.map((group, idx) => (
         <section key={idx} className="rounded-lg border border-slate-800 bg-slate-900 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className={`rounded px-2 py-0.5 text-xs font-medium ${LEVEL_STYLES[group.level]}`}>
-                {LEVEL_LABELS[group.level]}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded px-2 py-0.5 text-xs font-medium ${groupStyle(group)}`}>
+                {groupLabel(group)}
               </span>
-              <span className="text-xs text-slate-500">
-                confidenza {(group.confidence * 100).toFixed(0)}%
-              </span>
+              <span className="text-xs text-slate-500">{levelMetricLabel(group)}</span>
+              {isAutoCleanEligibleClient(group) ? (
+                <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+                  toccato dalla pulizia automatica
+                </span>
+              ) : (
+                <span className="rounded bg-slate-700/40 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                  richiede revisione manuale
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-slate-300">
