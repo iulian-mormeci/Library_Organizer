@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export interface ClientTrack {
@@ -26,14 +25,19 @@ function formatBytes(bytes: string | null): string {
 export function DuplicateTrackRow({
   track,
   isBest,
+  selected,
+  onToggleSelect,
+  onDeleted,
 }: {
   track: ClientTrack;
   isBest: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+  /** Called once the single-file delete below succeeds — the parent owns removing this track from its group/selection state. */
+  onDeleted: (id: string) => void;
 }) {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deleted, setDeleted] = useState(false);
 
   async function handleDelete() {
     if (!confirm(`Eliminare definitivamente il file?\n${track.path}`)) return;
@@ -66,23 +70,20 @@ export function DuplicateTrackRow({
       return;
     }
 
-    setDeleted(true);
-    setPending(false);
-    router.refresh();
-  }
-
-  if (deleted) {
-    return (
-      <tr className="border-t border-slate-800 opacity-40">
-        <td colSpan={6} className="py-2 text-sm italic text-slate-500">
-          Eliminato: {track.path}
-        </td>
-      </tr>
-    );
+    onDeleted(track.id);
   }
 
   return (
     <tr className={`border-t border-slate-800 ${isBest ? "bg-emerald-950/30" : ""}`}>
+      <td className="py-2 pr-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          className="h-4 w-4 rounded border-slate-600 bg-slate-800 accent-emerald-600"
+          aria-label={`Seleziona ${track.filename}`}
+        />
+      </td>
       <td className="py-2 pr-4">
         {isBest && (
           <span className="mr-2 rounded bg-emerald-500/20 px-1.5 py-0.5 text-xs font-medium text-emerald-300">

@@ -1,21 +1,10 @@
-import { DetectionLevel, DuplicateGroup } from "@/lib/dedup";
+import { DuplicateGroup } from "@/lib/dedup";
 import { getPersistedDuplicateGroups } from "@/lib/duplicateCompute";
 import { pickBestTrack } from "@/lib/trackQuality";
-import { DuplicateTrackRow, ClientTrack } from "@/components/DuplicateTrackRow";
+import { ClientTrack } from "@/components/DuplicateTrackRow";
+import { DuplicatesView, ClientGroup } from "@/components/DuplicatesView";
 
 export const dynamic = "force-dynamic";
-
-const LEVEL_LABELS: Record<DetectionLevel, string> = {
-  "exact-hash": "Hash identico (copia byte-per-byte)",
-  "fuzzy-metadata": "Metadati simili (artista/titolo)",
-  fingerprint: "Fingerprint audio simile",
-};
-
-const LEVEL_STYLES: Record<DetectionLevel, string> = {
-  "exact-hash": "bg-red-500/20 text-red-300",
-  "fuzzy-metadata": "bg-amber-500/20 text-amber-300",
-  fingerprint: "bg-sky-500/20 text-sky-300",
-};
 
 function toClientTrack(track: DuplicateGroup["tracks"][number]): ClientTrack {
   return {
@@ -40,6 +29,16 @@ function formatDate(date: Date | null): string {
 export default async function DuplicatesPage() {
   const { computedAt, groups } = await getPersistedDuplicateGroups();
 
+  const clientGroups: ClientGroup[] = groups.map((group) => {
+    const best = pickBestTrack(group.tracks);
+    return {
+      level: group.level,
+      confidence: group.confidence,
+      bestTrackId: best.id,
+      tracks: group.tracks.map(toClientTrack),
+    };
+  });
+
   return (
     <div className="space-y-8">
       <section>
@@ -53,50 +52,7 @@ export default async function DuplicatesPage() {
         </p>
       </section>
 
-      {groups.map((group, idx) => {
-        const best = pickBestTrack(group.tracks);
-        return (
-          <section key={idx} className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className={`rounded px-2 py-0.5 text-xs font-medium ${LEVEL_STYLES[group.level]}`}>
-                  {LEVEL_LABELS[group.level]}
-                </span>
-                <span className="text-xs text-slate-500">
-                  confidenza {(group.confidence * 100).toFixed(0)}%
-                </span>
-              </div>
-              <div className="text-sm text-slate-300">
-                {group.tracks[0].artist ?? "?"} – {group.tracks[0].title ?? group.tracks[0].filename}
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-slate-400">
-                  <tr>
-                    <th className="pb-2 pr-4">Percorso</th>
-                    <th className="pb-2 pr-4">Formato</th>
-                    <th className="pb-2 pr-4">Bitrate</th>
-                    <th className="pb-2 pr-4">Dimensione</th>
-                    <th className="pb-2 pr-4">Durata</th>
-                    <th className="pb-2 pr-4">Azioni</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.tracks.map((track) => (
-                    <DuplicateTrackRow
-                      key={track.id}
-                      track={toClientTrack(track)}
-                      isBest={track.id === best.id}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        );
-      })}
+      <DuplicatesView initialGroups={clientGroups} />
     </div>
   );
 }
