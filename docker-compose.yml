@@ -9,6 +9,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-music_dedup}:${POSTGRES_PASSWORD:-music_dedup}@postgres:5432/${POSTGRES_DB:-music_dedup}
       LIBRARY_PATH: ${LIBRARY_PATH_IN_CONTAINER:-/music}
       FPCALC_PATH: /usr/bin/fpcalc
+      # Not used to gate the actual DELETE decision (that's always a live
+      # fs.unlink() result, see src/lib/deleteFile.ts) — passed through so
+      # it's visible to the process for diagnostics/logging and so the app
+      # and the bind mount below can never silently disagree about it.
+      LIBRARY_MOUNT_MODE: ${LIBRARY_MOUNT_MODE:-ro}
     ports:
       - "${APP_PORT:-3000}:3000"
     volumes:

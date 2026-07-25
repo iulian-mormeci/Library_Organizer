@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { ScanPanel, ScanStatus } from "@/components/ScanPanel";
 import { RecomputeDuplicatesButton, RecomputeJob } from "@/components/RecomputeDuplicatesButton";
+import { checkLibraryWritable } from "@/lib/libraryWriteCheck";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,9 @@ export default async function DashboardPage() {
       }
     : null;
 
+  const libraryPath = process.env.LIBRARY_PATH ?? null;
+  const writeCheck = libraryPath ? await checkLibraryWritable(libraryPath) : null;
+
   const initialDupJob: RecomputeJob | null = lastDupJob
     ? {
         id: lastDupJob.id,
@@ -78,6 +82,31 @@ export default async function DashboardPage() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+        <h2 className="text-lg font-medium">Libreria</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          {libraryPath === null ? (
+            "LIBRARY_PATH non configurato."
+          ) : writeCheck?.writable ? (
+            <>
+              <span className="text-emerald-400">Scrivibile</span> — verificato alle{" "}
+              {new Date(writeCheck.checkedAt).toLocaleTimeString("it-IT")} su <code>{libraryPath}</code>.
+              L&apos;eliminazione dei duplicati dalla pagina Duplicati è disponibile.
+            </>
+          ) : (
+            <>
+              <span className="text-amber-400">Non scrivibile</span> ({writeCheck?.error ?? "sconosciuto"}) su{" "}
+              <code>{libraryPath}</code>. Questo è solo un controllo diagnostico d&apos;insieme — il
+              tentativo di eliminazione su un singolo file in{" "}
+              <a href="/duplicates" className="underline hover:text-slate-300">
+                Duplicati
+              </a>{" "}
+              resta comunque una verifica live su quel file specifico, indipendente da questo valore.
+            </>
+          )}
+        </p>
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">

@@ -2,7 +2,14 @@ import fs from "node:fs/promises";
 
 export type DeleteFileResult =
   | { ok: true; alreadyMissing: boolean }
-  | { ok: false; reason: "read-only"; code: string }
+  // EROFS: the filesystem/mount itself is read-only (matches a Docker :ro
+  // bind mount, e.g. LIBRARY_MOUNT_MODE=ro).
+  | { ok: false; reason: "read-only-mount"; code: string }
+  // EACCES/EPERM: permission denied on this specific file/directory. This
+  // can happen even on a genuinely read-write mount — e.g. an NFS export
+  // with root_squash mapping the container's root to a restricted UID on
+  // the server, or file ownership that doesn't match the container's UID.
+  | { ok: false; reason: "permission-denied"; code: string }
   | { ok: false; reason: "other"; code?: string; message: string };
 
 /**
@@ -24,8 +31,12 @@ export async function deleteFileIfPossible(filePath: string): Promise<DeleteFile
       return { ok: true, alreadyMissing: true };
     }
 
-    if (code === "EROFS" || code === "EACCES" || code === "EPERM") {
-      return { ok: false, reason: "read-only", code };
+    if (code === "EROFS") {
+      return { ok: false, reason: "read-only-mount", code };
+    }
+
+    if (code === "EACCES" || code === "EPERM") {
+      return { ok: false, reason: "permission-denied", code };
     }
 
     return { ok: false, reason: "other", code, message: (err as Error).message };
