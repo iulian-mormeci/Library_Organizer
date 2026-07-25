@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { DetectionLevel } from "@/lib/dedup";
+import { formatBytes } from "@/lib/format";
 import { DuplicateTrackRow, ClientTrack } from "./DuplicateTrackRow";
 
 export interface ClientGroup {
@@ -12,9 +13,16 @@ export interface ClientGroup {
   tracks: ClientTrack[];
 }
 
-interface BulkDeleteResult {
+interface DeleteSummary {
   deletedCount: number;
   failed: Array<{ id: string; error: string }>;
+  bytesFreed?: string;
+}
+
+interface AutoCleanPreview {
+  groupCount: number;
+  tracks: Array<{ id: string; fileSize: string | null }>;
+  bytesToFree: string;
 }
 
 const LEVEL_LABELS: Record<DetectionLevel, string> = {
@@ -33,7 +41,8 @@ const LEVEL_STYLES: Record<DetectionLevel, string> = {
 // from an endpoint whose contract is a plain synchronous summary response
 // (no persisted job to poll, unlike the scan feature) — each chunk is one
 // POST to bulk-delete, and the server applies its own bounded concurrency
-// (5 workers) within each chunk.
+// (5 workers) within each chunk. Auto-clean reuses this exact same path
+// once its own preview has been confirmed, instead of duplicating it.
 const BULK_DELETE_BATCH_SIZE = 20;
 
 export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[] }) {
@@ -42,7 +51,11 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [progress, setProgress] = useState<{ processed: number; total: number } | null>(null);
-  const [lastResult, setLastResult] = useState<BulkDeleteResult | null>(null);
+  const [lastResult, setLastResult] = useState<DeleteSummary | null>(null);
+
+  const [autoCleanLoading, setAutoCleanLoading] = useState(false);
+  const [autoCleanPreview, setAutoCleanPreview] = useState<AutoCleanPreview | null>(null);
+  const [autoCleanMessage, setAutoCleanMessage] = useState<string | null>(null);
 
   const selectedCount = selected.size;
 
@@ -88,11 +101,17 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
     router.refresh();
   }
 
-  async function handleBulkDelete() {
-    const ids = Array.from(selected);
-    if (ids.length === 0) return;
-    if (!confirm(`Eliminare ${ids.length} tracce selezionate? Questa azione non è reversibile.`)) return;
-
+  /**
+   * Shared by manual bulk-delete and auto-clean: chunks `ids` and posts
+   * them to /api/tracks/bulk-delete sequentially, updating progress between
+   * chunks, then folds the result into the shared groups/selection/summary
+   * state. Returns the raw deleted/failed lists so a caller (auto-clean)
+   * can compute its own bytes-freed total from them.
+   */
+  async function runBatchDelete(ids: string[]): Promise<{
+    deletedAll: string[];
+    failedAll: Array<{ id: string; error: string }>;
+  }> {
     setDeleting(true);
     setLastResult(null);
     setProgress({ processed: 0, total: ids.length });
@@ -141,10 +160,107 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
     setProgress(null);
     setDeleting(false);
     router.refresh();
+
+    return { deletedAll, failedAll };
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!confirm(`Eliminare ${ids.length} tracce selezionate? Questa azione non è reversibile.`)) return;
+    await runBatchDelete(ids);
+  }
+
+  async function loadAutoCleanPreview() {
+    setAutoCleanLoading(true);
+    setAutoCleanMessage(null);
+    setAutoCleanPreview(null);
+    try {
+      const res = await fetch("/api/duplicates/auto-clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) {
+        setAutoCleanMessage(data?.error ?? `Impossibile calcolare l'anteprima (HTTP ${res.status})`);
+        return;
+      }
+      if (data.tracks.length === 0) {
+        setAutoCleanMessage("Nessun duplicato esatto (hash identico) da eliminare al momento.");
+        return;
+      }
+      setAutoCleanPreview(data);
+    } catch (err) {
+      setAutoCleanMessage((err as Error).message || "Impossibile contattare il server");
+    } finally {
+      setAutoCleanLoading(false);
+    }
+  }
+
+  async function confirmAutoClean() {
+    if (!autoCleanPreview) return;
+    const preview = autoCleanPreview;
+    setAutoCleanPreview(null);
+
+    const ids = preview.tracks.map((t) => t.id);
+    const sizeById = new Map(preview.tracks.map((t) => [t.id, t.fileSize ? BigInt(t.fileSize) : BigInt(0)]));
+
+    const { deletedAll } = await runBatchDelete(ids);
+
+    const bytesFreed = deletedAll.reduce((sum, id) => sum + (sizeById.get(id) ?? BigInt(0)), BigInt(0));
+    setLastResult((prev) => (prev ? { ...prev, bytesFreed: bytesFreed.toString() } : prev));
   }
 
   return (
     <div className="space-y-8 pb-24">
+      <section className="rounded-lg border border-emerald-900 bg-emerald-950/20 p-5">
+        <h2 className="text-lg font-medium text-emerald-100">Pulizia automatica duplicati esatti</h2>
+        <p className="mt-1 text-sm text-emerald-200/70">
+          Elimina automaticamente i file identici byte-per-byte (hash SHA256 uguale), tenendo sempre la
+          copia migliore di ciascun gruppo. Sicuro al 100%, nessuna ambiguità: i gruppi rilevati solo da
+          metadati simili o fingerprint audio non vengono mai toccati da questo bottone e restano da
+          rivedere qui sotto manualmente.
+        </p>
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={loadAutoCleanPreview}
+            disabled={autoCleanLoading || deleting}
+            className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {autoCleanLoading ? "Calcolo anteprima…" : "Pulizia automatica duplicati esatti"}
+          </button>
+          {autoCleanMessage && <span className="text-sm text-emerald-200/70">{autoCleanMessage}</span>}
+        </div>
+
+        {autoCleanPreview && (
+          <div className="mt-4 rounded-md border border-emerald-800 bg-emerald-950/40 p-4">
+            <div className="text-sm text-emerald-100">
+              <strong>{autoCleanPreview.groupCount}</strong> gruppi,{" "}
+              <strong>{autoCleanPreview.tracks.length}</strong> tracce verranno eliminate,{" "}
+              <strong>{formatBytes(autoCleanPreview.bytesToFree)}</strong> liberati. La copia migliore di
+              ogni gruppo (formato lossless &gt; bitrate &gt; dimensione) viene sempre mantenuta.
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                onClick={confirmAutoClean}
+                disabled={deleting}
+                className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Conferma ed elimina {autoCleanPreview.tracks.length} tracce
+              </button>
+              <button
+                onClick={() => setAutoCleanPreview(null)}
+                disabled={deleting}
+                className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {lastResult && (
         <div
           className={`rounded-lg border p-4 text-sm ${
@@ -156,10 +272,15 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
           <div className="flex items-start justify-between gap-4">
             <div>
               {lastResult.failed.length === 0 ? (
-                <>{lastResult.deletedCount} tracce eliminate con successo.</>
+                <>
+                  {lastResult.deletedCount} tracce eliminate con successo
+                  {lastResult.bytesFreed && <> — {formatBytes(lastResult.bytesFreed)} liberati</>}.
+                </>
               ) : (
                 <>
-                  {lastResult.deletedCount} eliminate, {lastResult.failed.length} fallite.
+                  {lastResult.deletedCount} eliminate
+                  {lastResult.bytesFreed && <> ({formatBytes(lastResult.bytesFreed)} liberati)</>},{" "}
+                  {lastResult.failed.length} fallite.
                   <ul className="mt-2 list-disc space-y-0.5 pl-5 text-amber-300/90">
                     {lastResult.failed.slice(0, 10).map((f) => (
                       <li key={f.id} className="break-all">
@@ -237,7 +358,7 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
         </section>
       ))}
 
-      {selectedCount > 0 && (
+      {(selectedCount > 0 || deleting) && (
         <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-800 bg-slate-900/95 px-6 py-4 shadow-lg backdrop-blur">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-slate-200">
@@ -248,14 +369,14 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
             <div className="flex items-center gap-3">
               <button
                 onClick={deselectAll}
-                disabled={deleting}
+                disabled={deleting || selectedCount === 0}
                 className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Deseleziona tutto
               </button>
               <button
                 onClick={handleBulkDelete}
-                disabled={deleting}
+                disabled={deleting || selectedCount === 0}
                 className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {deleting ? "Eliminazione…" : `Elimina selezionate (${selectedCount})`}

@@ -1,28 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { deleteFileIfPossible } from "@/lib/deleteFile";
+import { bulkDeleteTracks } from "@/lib/bulkDelete";
 import { triggerDuplicateRecompute } from "@/lib/duplicateCompute";
-
-// Mirrors the worker-pool pattern in src/lib/scanner.ts: a shared cursor
-// plus a fixed number of concurrent workers, instead of unbounded
-// Promise.all (which could open hundreds of simultaneous NFS file
-// operations) or a fully sequential loop (too slow for large selections).
-const CONCURRENCY = 5;
 
 // Defensive cap for direct API use — the duplicates page itself chunks
 // selections into much smaller batches before calling this endpoint.
 const MAX_TRACK_IDS = 2000;
 
-interface FailedDeletion {
-  id: string;
-  error: string;
-  code?: string;
-}
-
 /**
  * POST /api/tracks/bulk-delete — deletes multiple tracks (file + DB row) in
- * one call. A failure on one track never aborts the rest of the batch: the
- * response always reports every id's outcome individually.
+ * one call. See src/lib/bulkDelete.ts for the actual deletion mechanics
+ * (concurrency, permission handling, partial-failure behavior).
  *
  * Body: { trackIds: string[], recompute?: boolean }
  *   recompute defaults to true. The duplicates page calls this endpoint
@@ -52,43 +39,7 @@ export async function POST(request: NextRequest) {
   const trackIds: string[] = rawTrackIds;
   const shouldRecompute = body?.recompute !== false;
 
-  const tracks = await prisma.track.findMany({ where: { id: { in: trackIds } } });
-  const trackById = new Map(tracks.map((t) => [t.id, t]));
-
-  const deleted: string[] = [];
-  const failed: FailedDeletion[] = [];
-
-  let cursor = 0;
-  async function worker() {
-    while (cursor < trackIds.length) {
-      const id = trackIds[cursor];
-      cursor += 1;
-
-      const track = trackById.get(id);
-      if (!track) {
-        failed.push({ id, error: "Track not found" });
-        continue;
-      }
-
-      const result = await deleteFileIfPossible(track.path);
-
-      if (!result.ok) {
-        const error =
-          result.reason === "read-only-mount"
-            ? "Mount read-only (EROFS) — set LIBRARY_MOUNT_MODE=rw"
-            : result.reason === "permission-denied"
-              ? "Permessi negati"
-              : result.message;
-        failed.push({ id, error, code: "code" in result ? result.code : undefined });
-        continue;
-      }
-
-      await prisma.track.delete({ where: { id: track.id } });
-      deleted.push(id);
-    }
-  }
-
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  const { deleted, failed } = await bulkDeleteTracks(trackIds);
 
   if (shouldRecompute && deleted.length > 0) {
     const recomputeResult = await triggerDuplicateRecompute();

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatBytes } from "@/lib/format";
 
 export interface ClientTrack {
   id: string;
@@ -13,13 +14,6 @@ export interface ClientTrack {
   bitrate: number | null;
   format: string | null;
   fileSize: string | null; // BigInt serialized as string
-}
-
-function formatBytes(bytes: string | null): string {
-  if (!bytes) return "—";
-  const n = Number(bytes);
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function DuplicateTrackRow({
