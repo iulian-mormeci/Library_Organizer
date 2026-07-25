@@ -48,6 +48,16 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
+# All COPY layers above ran as root (the default until a container is
+# actually started), so everything under /app is currently root-owned.
+# docker-compose.yml runs this image as user "1000:1000" — the UID/GID
+# node:20-bookworm-slim already provisions as the "node" user for exactly
+# this purpose (matches the file owner on a TrueNAS NFS export, and avoids
+# the classic Node crash from running as a numeric UID with no /etc/passwd
+# entry) — so hand ownership of the app directory to that user explicitly
+# rather than relying on "other" read/execute bits being permissive enough.
+RUN chown -R node:node /app
+
 EXPOSE 3000
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

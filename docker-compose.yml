@@ -2,6 +2,14 @@ services:
   app:
     build: .
     restart: unless-stopped
+    # Matches the file owner UID/GID on the TrueNAS NFS export. Without
+    # this, the container runs as root — which NFS root_squash maps to an
+    # unprivileged/anonymous user server-side, blocking writes/deletes to
+    # files the export doesn't already grant that anonymous user access to.
+    # 1000:1000 is node:20-bookworm-slim's built-in "node" user (see the
+    # chown in the Dockerfile's runner stage), not an arbitrary number —
+    # change both together if your NFS export uses a different UID/GID.
+    user: "1000:1000"
     depends_on:
       postgres:
         condition: service_healthy
