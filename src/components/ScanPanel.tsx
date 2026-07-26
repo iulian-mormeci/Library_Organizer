@@ -92,7 +92,7 @@ export function ScanPanel({ initialStatus }: { initialStatus: ScanStatus | null 
       const res = await fetch("/api/scan", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        setStartError(data.error ?? "Errore durante l'avvio della scansione");
+        setStartError(data.error ?? "Error starting the scan");
         return;
       }
 
@@ -120,7 +120,7 @@ export function ScanPanel({ initialStatus }: { initialStatus: ScanStatus | null 
           disabled={starting}
           className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {starting ? "Avvio in corso…" : "Avvia nuova scansione"}
+          {starting ? "Starting…" : "Start new scan"}
         </button>
         {startError && <span className="text-sm text-red-400">{startError}</span>}
       </div>
@@ -138,8 +138,8 @@ export function ScanPanel({ initialStatus }: { initialStatus: ScanStatus | null 
         <div className="flex items-center justify-between text-sm text-slate-400">
           <span>
             {status.totalFiles !== null
-              ? `${status.processedFiles} / ${status.totalFiles} file`
-              : `${status.processedFiles} file processati…`}
+              ? `${status.processedFiles} / ${status.totalFiles} files`
+              : `${status.processedFiles} files processed…`}
           </span>
           <span className="tabular-nums">{formatElapsed(elapsedSeconds)}</span>
         </div>
@@ -154,15 +154,15 @@ export function ScanPanel({ initialStatus }: { initialStatus: ScanStatus | null 
           )}
         </div>
         {status.currentFile && (
-          <div className="mt-1 truncate text-xs text-slate-500">In corso: {status.currentFile}</div>
+          <div className="mt-1 truncate text-xs text-slate-500">Processing: {status.currentFile}</div>
         )}
       </div>
 
       <div>
-        <div className="mb-2 text-sm font-medium text-slate-300">Trovate di recente</div>
+        <div className="mb-2 text-sm font-medium text-slate-300">Recently found</div>
         <ul className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-slate-800 bg-slate-950/50 p-2 text-sm">
           {tracks.length === 0 && (
-            <li className="text-slate-500">In attesa dei primi risultati…</li>
+            <li className="text-slate-500">Waiting for the first results…</li>
           )}
           {tracks.map((track) => (
             <li key={track.id} className="truncate">

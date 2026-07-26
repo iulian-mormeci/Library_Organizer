@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/duplicates/auto-clean — deletes every track except the one
- * "consigliata" pick in each duplicate group that qualifies as risk-free:
+ * "recommended" pick in each duplicate group that qualifies as risk-free:
  * an exact SHA256 hash match, or a fingerprint match at exactly 100%
  * similarity (every compared bit identical — not 95-99%). See
  * isAutoCleanEligible in src/lib/autoClean.ts for why this is a hard

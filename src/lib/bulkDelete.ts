@@ -53,7 +53,7 @@ export async function bulkDeleteTracks(trackIds: string[]): Promise<BulkDeleteRe
           result.reason === "read-only-mount"
             ? "Mount read-only (EROFS) — set LIBRARY_MOUNT_MODE=rw"
             : result.reason === "permission-denied"
-              ? "Permessi negati"
+              ? "Permission denied"
               : result.message;
         failed.push({ id, error, code: "code" in result ? result.code : undefined });
         continue;

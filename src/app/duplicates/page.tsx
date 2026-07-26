@@ -22,8 +22,8 @@ function toClientTrack(track: DuplicateGroup["tracks"][number]): ClientTrack {
 }
 
 function formatDate(date: Date | null): string {
-  if (!date) return "mai";
-  return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium", timeStyle: "short" }).format(date);
+  if (!date) return "never";
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 export default async function DuplicatesPage() {
@@ -42,13 +42,13 @@ export default async function DuplicatesPage() {
   return (
     <div className="space-y-8">
       <section>
-        <h1 className="text-2xl font-semibold">Duplicati</h1>
+        <h1 className="text-2xl font-semibold">Duplicates</h1>
         <p className="mt-1 text-sm text-slate-400">
           {computedAt === null
-            ? "Nessun calcolo duplicati eseguito ancora. Avvia una scansione dalla dashboard (il ricalcolo parte automaticamente al termine), oppure lancia un ricalcolo manuale."
+            ? "No duplicate scan has run yet. Start a scan from the dashboard (a recompute kicks off automatically once it finishes), or trigger a manual recompute."
             : groups.length === 0
-              ? `Nessun duplicato trovato (ultimo calcolo: ${formatDate(computedAt)}).`
-              : `${groups.length} gruppi di duplicati trovati (ultimo calcolo: ${formatDate(computedAt)}).`}
+              ? `No duplicates found (last computed: ${formatDate(computedAt)}).`
+              : `${groups.length} duplicate groups found (last computed: ${formatDate(computedAt)}).`}
         </p>
       </section>
 

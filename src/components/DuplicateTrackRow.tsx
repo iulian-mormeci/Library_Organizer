@@ -34,7 +34,7 @@ export function DuplicateTrackRow({
   const [error, setError] = useState<string | null>(null);
 
   async function handleDelete() {
-    if (!confirm(`Eliminare definitivamente il file?\n${track.path}`)) return;
+    if (!confirm(`Permanently delete this file?\n${track.path}`)) return;
     setPending(true);
     setError(null);
 
@@ -44,7 +44,7 @@ export function DuplicateTrackRow({
     try {
       res = await fetch(`/api/tracks/${track.id}`, { method: "DELETE" });
     } catch {
-      setError("Impossibile contattare il server. Controlla la connessione e riprova.");
+      setError("Couldn't reach the server. Check your connection and try again.");
       setPending(false);
       return;
     }
@@ -59,7 +59,7 @@ export function DuplicateTrackRow({
     }
 
     if (!res.ok) {
-      setError(data.error ?? `Eliminazione fallita (HTTP ${res.status})`);
+      setError(data.error ?? `Delete failed (HTTP ${res.status})`);
       setPending(false);
       return;
     }
@@ -75,13 +75,13 @@ export function DuplicateTrackRow({
           checked={selected}
           onChange={onToggleSelect}
           className="h-4 w-4 rounded border-slate-600 bg-slate-800 accent-emerald-600"
-          aria-label={`Seleziona ${track.filename}`}
+          aria-label={`Select ${track.filename}`}
         />
       </td>
       <td className="py-2 pr-4">
         {isBest && (
           <span className="mr-2 rounded bg-emerald-500/20 px-1.5 py-0.5 text-xs font-medium text-emerald-300">
-            consigliata
+            recommended
           </span>
         )}
         <span className="break-all text-slate-300">{track.path}</span>
@@ -100,7 +100,7 @@ export function DuplicateTrackRow({
           disabled={pending}
           className="rounded-md border border-red-800 px-3 py-1 text-xs font-medium text-red-300 hover:bg-red-900/40 disabled:opacity-50"
         >
-          {pending ? "Eliminazione…" : "Elimina"}
+          {pending ? "Deleting…" : "Delete"}
         </button>
         {error && <div className="mt-1 max-w-xs text-xs text-red-400">{error}</div>}
       </td>

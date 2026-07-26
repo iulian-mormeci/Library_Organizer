@@ -33,7 +33,7 @@ services:
       # this at the container's mount namespace, independently of whatever
       # permissions the underlying NFS export actually has) — it defaults
       # to "ro" for safety. Setting LIBRARY_MOUNT_MODE=rw in .env is
-      # required for the "Elimina" button in the UI to actually remove
+      # required for the "Delete" button in the UI to actually remove
       # files (see src/app/api/tracks/[id]/route.ts); after changing it,
       # recreate the container with `docker compose up -d` for the new
       # mount option to take effect — an already-running container keeps

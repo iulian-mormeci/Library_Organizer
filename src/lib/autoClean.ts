@@ -36,7 +36,7 @@ function isAutoCleanEligible(group: DuplicateGroup): boolean {
  *
  * For each qualifying group, every track except the one
  * src/lib/trackQuality.ts picks as "best" is added to the plan — same
- * heuristic used for the UI's "consigliata" badge, made fully deterministic
+ * heuristic used for the UI's "recommended" badge, made fully deterministic
  * (see pickBestTrack) so a preview and the actual deletion that follows it
  * always agree on which track survives.
  */

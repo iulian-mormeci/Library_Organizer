@@ -31,8 +31,8 @@ interface AutoCleanPreview {
 // 1-minus-normalized-Levenshtein for fuzzy-metadata, both of which can
 // legitimately read 99-100% for files that are NOT byte-identical, e.g. the
 // same recording losslessly re-encoded with different tags). Labeling all
-// three as generic "confidenza X%" made a fingerprint match look exactly as
-// authoritative as an actual hash match, which mattered a lot once
+// three as a generic "confidence X%" made a fingerprint match look exactly
+// as authoritative as an actual hash match, which mattered a lot once
 // auto-clean started also touching fingerprint groups — but only the ones
 // at exactly 100%, never 95-99%.
 //
@@ -45,11 +45,11 @@ function isAutoCleanEligibleClient(group: ClientGroup): boolean {
 }
 
 function groupLabel(group: ClientGroup): string {
-  if (group.level === "exact-hash") return "Identico byte-per-byte";
+  if (group.level === "exact-hash") return "Identical byte-for-byte";
   if (group.level === "fingerprint") {
-    return group.confidence === 1 ? "Audio identico (fingerprint 100%)" : "Stesso audio — fingerprint simile";
+    return group.confidence === 1 ? "Identical audio (fingerprint 100%)" : "Same audio — similar fingerprint";
   }
-  return "Probabile duplicato — metadati simili";
+  return "Likely duplicate — similar metadata";
 }
 
 function groupStyle(group: ClientGroup): string {
@@ -61,17 +61,17 @@ function groupStyle(group: ClientGroup): string {
 function levelMetricLabel(group: ClientGroup): string {
   switch (group.level) {
     case "exact-hash":
-      return "hash SHA256 uguale — copia esatta, zero ambiguità";
+      return "matching SHA256 hash — exact copy, zero ambiguity";
     case "fingerprint":
       return group.confidence === 1
-        ? "similarity audio: 100% — nessuna differenza percettibile rilevata"
-        : `somiglianza audio (fingerprint): ${(group.confidence * 100).toFixed(0)}%`;
+        ? "audio similarity: 100% — no perceptible difference detected"
+        : `audio similarity (fingerprint): ${(group.confidence * 100).toFixed(0)}%`;
     case "fuzzy-metadata":
-      return `somiglianza testo (artista/titolo): ${(group.confidence * 100).toFixed(0)}%`;
+      return `text similarity (artist/title): ${(group.confidence * 100).toFixed(0)}%`;
   }
 }
 
-// Client-side chunking is what makes "120/300 elaborate" progress possible
+// Client-side chunking is what makes "120/300 processed" progress possible
 // from an endpoint whose contract is a plain synchronous summary response
 // (no persisted job to poll, unlike the scan feature) — each chunk is one
 // POST to bulk-delete, and the server applies its own bounded concurrency
@@ -181,7 +181,7 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
           }
         }
       } catch (err) {
-        const message = (err as Error).message || "Impossibile contattare il server";
+        const message = (err as Error).message || "Couldn't reach the server";
         for (const id of batch) failedAll.push({ id, error: message });
       }
 
@@ -201,7 +201,7 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
   async function handleBulkDelete() {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
-    if (!confirm(`Eliminare ${ids.length} tracce selezionate? Questa azione non è reversibile.`)) return;
+    if (!confirm(`Delete ${ids.length} selected tracks? This action cannot be undone.`)) return;
     await runBatchDelete(ids);
   }
 
@@ -217,18 +217,18 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data) {
-        setAutoCleanMessage(data?.error ?? `Impossibile calcolare l'anteprima (HTTP ${res.status})`);
+        setAutoCleanMessage(data?.error ?? `Couldn't compute the preview (HTTP ${res.status})`);
         return;
       }
       if (data.tracks.length === 0) {
         setAutoCleanMessage(
-          "Nessun duplicato sicuro (hash identico o audio identico al 100%) da eliminare al momento.",
+          "No safe duplicates (matching hash or 100% identical audio) to delete right now.",
         );
         return;
       }
       setAutoCleanPreview(data);
     } catch (err) {
-      setAutoCleanMessage((err as Error).message || "Impossibile contattare il server");
+      setAutoCleanMessage((err as Error).message || "Couldn't reach the server");
     } finally {
       setAutoCleanLoading(false);
     }
@@ -251,13 +251,12 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
   return (
     <div className="space-y-8 pb-24">
       <section className="rounded-lg border border-emerald-900 bg-emerald-950/20 p-5">
-        <h2 className="text-lg font-medium text-emerald-100">Pulizia automatica duplicati</h2>
+        <h2 className="text-lg font-medium text-emerald-100">Automatic duplicate cleanup</h2>
         <p className="mt-1 text-sm text-emerald-200/70">
-          Elimina automaticamente i duplicati identici byte-per-byte o con audio identico al 100%
-          (fingerprint), tenendo sempre la copia migliore. Sicuro al 100%, nessuna ambiguità: qualunque
-          gruppo con somiglianza inferiore al 100% — anche di un solo punto percentuale, sia fingerprint
-          che metadati — non viene mai toccato da questo bottone e resta da rivedere qui sotto
-          manualmente.
+          Automatically deletes duplicates that are identical byte-for-byte or have 100% identical audio
+          (fingerprint), always keeping the best copy. 100% safe, no ambiguity: any group with less than
+          100% similarity — even by a single percentage point, whether fingerprint or metadata — is never
+          touched by this button and stays below for manual review.
         </p>
         <div className="mt-4 flex items-center gap-3">
           <button
@@ -265,7 +264,7 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
             disabled={autoCleanLoading || deleting}
             className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {autoCleanLoading ? "Calcolo anteprima…" : "Pulizia automatica duplicati"}
+            {autoCleanLoading ? "Computing preview…" : "Clean up duplicates automatically"}
           </button>
           {autoCleanMessage && <span className="text-sm text-emerald-200/70">{autoCleanMessage}</span>}
         </div>
@@ -273,10 +272,10 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
         {autoCleanPreview && (
           <div className="mt-4 rounded-md border border-emerald-800 bg-emerald-950/40 p-4">
             <div className="text-sm text-emerald-100">
-              <strong>{autoCleanPreview.groupCount}</strong> gruppi,{" "}
-              <strong>{autoCleanPreview.tracks.length}</strong> tracce verranno eliminate,{" "}
-              <strong>{formatBytes(autoCleanPreview.bytesToFree)}</strong> liberati. La copia migliore di
-              ogni gruppo (formato lossless &gt; bitrate &gt; dimensione) viene sempre mantenuta.
+              <strong>{autoCleanPreview.groupCount}</strong> groups,{" "}
+              <strong>{autoCleanPreview.tracks.length}</strong> tracks will be deleted,{" "}
+              <strong>{formatBytes(autoCleanPreview.bytesToFree)}</strong> freed. The best copy of each
+              group (lossless format &gt; bitrate &gt; file size) is always kept.
             </div>
             <div className="mt-3 flex items-center gap-3">
               <button
@@ -284,14 +283,14 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
                 disabled={deleting}
                 className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Conferma ed elimina {autoCleanPreview.tracks.length} tracce
+                Confirm and delete {autoCleanPreview.tracks.length} tracks
               </button>
               <button
                 onClick={() => setAutoCleanPreview(null)}
                 disabled={deleting}
                 className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Annulla
+                Cancel
               </button>
             </div>
           </div>
@@ -310,21 +309,21 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
             <div>
               {lastResult.failed.length === 0 ? (
                 <>
-                  {lastResult.deletedCount} tracce eliminate con successo
-                  {lastResult.bytesFreed && <> — {formatBytes(lastResult.bytesFreed)} liberati</>}.
+                  {lastResult.deletedCount} tracks deleted successfully
+                  {lastResult.bytesFreed && <> — {formatBytes(lastResult.bytesFreed)} freed</>}.
                 </>
               ) : (
                 <>
-                  {lastResult.deletedCount} eliminate
-                  {lastResult.bytesFreed && <> ({formatBytes(lastResult.bytesFreed)} liberati)</>},{" "}
-                  {lastResult.failed.length} fallite.
+                  {lastResult.deletedCount} deleted
+                  {lastResult.bytesFreed && <> ({formatBytes(lastResult.bytesFreed)} freed)</>},{" "}
+                  {lastResult.failed.length} failed.
                   <ul className="mt-2 list-disc space-y-0.5 pl-5 text-amber-300/90">
                     {lastResult.failed.slice(0, 10).map((f) => (
                       <li key={f.id} className="break-all">
                         {f.error}
                       </li>
                     ))}
-                    {lastResult.failed.length > 10 && <li>… e altre {lastResult.failed.length - 10}.</li>}
+                    {lastResult.failed.length > 10 && <li>… and {lastResult.failed.length - 10} more.</li>}
                   </ul>
                 </>
               )}
@@ -333,7 +332,7 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
               onClick={() => setLastResult(null)}
               className="shrink-0 text-xs underline hover:text-white"
             >
-              Chiudi
+              Dismiss
             </button>
           </div>
         </div>
@@ -349,11 +348,11 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
               <span className="text-xs text-slate-500">{levelMetricLabel(group)}</span>
               {isAutoCleanEligibleClient(group) ? (
                 <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
-                  toccato dalla pulizia automatica
+                  covered by automatic cleanup
                 </span>
               ) : (
                 <span className="rounded bg-slate-700/40 px-2 py-0.5 text-[11px] font-medium text-slate-400">
-                  richiede revisione manuale
+                  needs manual review
                 </span>
               )}
             </div>
@@ -366,7 +365,7 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
                   onClick={() => selectAllExceptBest(group)}
                   className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
                 >
-                  Seleziona tutte tranne la consigliata
+                  Select all except the recommended copy
                 </button>
               )}
             </div>
@@ -377,12 +376,12 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
               <thead className="text-slate-400">
                 <tr>
                   <th className="w-8 pb-2 pr-2"></th>
-                  <th className="pb-2 pr-4">Percorso</th>
-                  <th className="pb-2 pr-4">Formato</th>
+                  <th className="pb-2 pr-4">Path</th>
+                  <th className="pb-2 pr-4">Format</th>
                   <th className="pb-2 pr-4">Bitrate</th>
-                  <th className="pb-2 pr-4">Dimensione</th>
-                  <th className="pb-2 pr-4">Durata</th>
-                  <th className="pb-2 pr-4">Azioni</th>
+                  <th className="pb-2 pr-4">Size</th>
+                  <th className="pb-2 pr-4">Duration</th>
+                  <th className="pb-2 pr-4">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -407,8 +406,8 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-slate-200">
               {deleting && progress
-                ? `Eliminazione in corso: ${progress.processed}/${progress.total}`
-                : `${selectedCount} tracce selezionate`}
+                ? `Deleting: ${progress.processed}/${progress.total}`
+                : `${selectedCount} tracks selected`}
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -416,14 +415,14 @@ export function DuplicatesView({ initialGroups }: { initialGroups: ClientGroup[]
                 disabled={deleting || selectedCount === 0}
                 className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Deseleziona tutto
+                Deselect all
               </button>
               <button
                 onClick={handleBulkDelete}
                 disabled={deleting || selectedCount === 0}
                 className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {deleting ? "Eliminazione…" : `Elimina selezionate (${selectedCount})`}
+                {deleting ? "Deleting…" : `Delete selected (${selectedCount})`}
               </button>
             </div>
           </div>

@@ -6,8 +6,8 @@ import { checkLibraryWritable } from "@/lib/libraryWriteCheck";
 export const dynamic = "force-dynamic";
 
 function formatDate(date: Date | null): string {
-  if (!date) return "mai";
-  return new Intl.DateTimeFormat("it-IT", {
+  if (!date) return "never";
+  return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
@@ -65,16 +65,16 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <section>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-400">Stato della libreria musicale.</p>
+        <p className="mt-1 text-sm text-slate-400">Music library status.</p>
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-          <div className="text-sm text-slate-400">Tracce indicizzate</div>
-          <div className="mt-1 text-3xl font-semibold">{trackCount.toLocaleString("it-IT")}</div>
+          <div className="text-sm text-slate-400">Tracks indexed</div>
+          <div className="mt-1 text-3xl font-semibold">{trackCount.toLocaleString("en-US")}</div>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-          <div className="text-sm text-slate-400">Ultima scansione</div>
+          <div className="text-sm text-slate-400">Last scan</div>
           <div className="mt-1 text-lg font-medium">{formatDate(lastJob?.startedAt ?? null)}</div>
           {lastJob && (
             <div className="mt-1">
@@ -85,36 +85,35 @@ export default async function DashboardPage() {
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-lg font-medium">Libreria</h2>
+        <h2 className="text-lg font-medium">Library</h2>
         <p className="mt-1 text-sm text-slate-400">
           {libraryPath === null ? (
-            "LIBRARY_PATH non configurato."
+            "LIBRARY_PATH is not configured."
           ) : writeCheck?.writable ? (
             <>
-              <span className="text-emerald-400">Scrivibile</span> — verificato alle{" "}
-              {new Date(writeCheck.checkedAt).toLocaleTimeString("it-IT")} su <code>{libraryPath}</code>.
-              L&apos;eliminazione dei duplicati dalla pagina Duplicati è disponibile.
+              <span className="text-emerald-400">Writable</span> — checked at{" "}
+              {new Date(writeCheck.checkedAt).toLocaleTimeString("en-US")} on <code>{libraryPath}</code>.
+              Deleting duplicates from the Duplicates page is available.
             </>
           ) : (
             <>
-              <span className="text-amber-400">Non scrivibile</span> ({writeCheck?.error ?? "sconosciuto"}) su{" "}
-              <code>{libraryPath}</code>. Questo è solo un controllo diagnostico d&apos;insieme — il
-              tentativo di eliminazione su un singolo file in{" "}
+              <span className="text-amber-400">Not writable</span> ({writeCheck?.error ?? "unknown"}) on{" "}
+              <code>{libraryPath}</code>. This is only an overall diagnostic check — deleting a single
+              file from{" "}
               <a href="/duplicates" className="underline hover:text-slate-300">
-                Duplicati
+                Duplicates
               </a>{" "}
-              resta comunque una verifica live su quel file specifico, indipendente da questo valore.
+              still does its own live check on that specific file, independent of this value.
             </>
           )}
         </p>
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-lg font-medium">Scansione</h2>
+        <h2 className="text-lg font-medium">Scan</h2>
         <p className="mt-1 text-sm text-slate-400">
-          Avvia una scansione del percorso configurato in <code>LIBRARY_PATH</code>. Viene eseguita
-          in background: puoi lasciare questa pagina e tornare più tardi, oppure seguirne
-          l&apos;avanzamento qui in tempo reale.
+          Starts a scan of the path configured in <code>LIBRARY_PATH</code>. It runs in the background:
+          you can leave this page and come back later, or follow its progress here in real time.
         </p>
         <div className="mt-4">
           <ScanPanel initialStatus={initialStatus} />
@@ -122,15 +121,15 @@ export default async function DashboardPage() {
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-lg font-medium">Duplicati</h2>
+        <h2 className="text-lg font-medium">Duplicates</h2>
         <p className="mt-1 text-sm text-slate-400">
-          Il calcolo dei duplicati gira come job separato (parte automaticamente a fine
-          scansione) e la pagina{" "}
+          Duplicate detection runs as a separate job (it starts automatically once a scan finishes), and
+          the{" "}
           <a href="/duplicates" className="underline hover:text-slate-300">
-            Duplicati
+            Duplicates
           </a>{" "}
-          legge sempre l&apos;ultimo risultato già calcolato. Usa questo bottone per forzare un
-          ricalcolo senza aspettare una nuova scansione.
+          page always reads the last computed result. Use this button to force a recompute without
+          waiting for a new scan.
         </p>
         <div className="mt-4">
           <RecomputeDuplicatesButton initialJob={initialDupJob} />
@@ -139,17 +138,17 @@ export default async function DashboardPage() {
 
       {recentJobs.length > 0 && (
         <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-          <h2 className="text-lg font-medium">Scansioni recenti</h2>
+          <h2 className="text-lg font-medium">Recent scans</h2>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="text-slate-400">
                 <tr>
-                  <th className="pb-2 pr-4">Avviata</th>
-                  <th className="pb-2 pr-4">Stato</th>
-                  <th className="pb-2 pr-4">Trovati</th>
-                  <th className="pb-2 pr-4">Aggiunti</th>
-                  <th className="pb-2 pr-4">Aggiornati</th>
-                  <th className="pb-2 pr-4">Falliti</th>
+                  <th className="pb-2 pr-4">Started</th>
+                  <th className="pb-2 pr-4">Status</th>
+                  <th className="pb-2 pr-4">Found</th>
+                  <th className="pb-2 pr-4">Added</th>
+                  <th className="pb-2 pr-4">Updated</th>
+                  <th className="pb-2 pr-4">Failed</th>
                 </tr>
               </thead>
               <tbody>

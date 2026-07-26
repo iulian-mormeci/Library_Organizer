@@ -15,8 +15,8 @@ export interface RecomputeJob {
 const POLL_INTERVAL_MS = 1500;
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "mai";
-  return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+  if (!iso) return "never";
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
 }
 
 export function RecomputeDuplicatesButton({ initialJob }: { initialJob: RecomputeJob | null }) {
@@ -58,7 +58,7 @@ export function RecomputeDuplicatesButton({ initialJob }: { initialJob: Recomput
       const res = await fetch("/api/duplicates/recompute", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setTriggerError(data.error ?? `Impossibile avviare il ricalcolo (HTTP ${res.status})`);
+        setTriggerError(data.error ?? `Couldn't start the recompute (HTTP ${res.status})`);
         return;
       }
       setJob({
@@ -70,7 +70,7 @@ export function RecomputeDuplicatesButton({ initialJob }: { initialJob: Recomput
         finishedAt: null,
       });
     } catch {
-      setTriggerError("Impossibile contattare il server. Controlla la connessione e riprova.");
+      setTriggerError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       setStarting(false);
     }
@@ -83,14 +83,14 @@ export function RecomputeDuplicatesButton({ initialJob }: { initialJob: Recomput
         disabled={starting || isRunning}
         className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {isRunning ? "Ricalcolo in corso…" : starting ? "Avvio…" : "Ricalcola duplicati"}
+        {isRunning ? "Recomputing…" : starting ? "Starting…" : "Recompute duplicates"}
       </button>
       <span className="text-sm text-slate-400">
         {job?.status === "failed"
-          ? `Ultimo ricalcolo fallito: ${job.error ?? "errore sconosciuto"}`
+          ? `Last recompute failed: ${job.error ?? "unknown error"}`
           : job
-            ? `Ultimo calcolo: ${formatDate(job.finishedAt)} — ${job.groupCount} gruppi`
-            : "Nessun calcolo eseguito ancora"}
+            ? `Last computed: ${formatDate(job.finishedAt)} — ${job.groupCount} groups`
+            : "No recompute run yet"}
       </span>
       {triggerError && <span className="text-sm text-red-400">{triggerError}</span>}
     </div>

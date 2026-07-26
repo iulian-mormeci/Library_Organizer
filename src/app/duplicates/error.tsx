@@ -18,16 +18,16 @@ export default function DuplicatesError({
 
   return (
     <div className="rounded-lg border border-red-900 bg-red-950/30 p-6">
-      <h2 className="text-lg font-medium text-red-300">Impossibile mostrare i duplicati</h2>
+      <h2 className="text-lg font-medium text-red-300">Couldn&apos;t display duplicates</h2>
       <p className="mt-2 text-sm text-red-200/80">
-        Si è verificato un errore imprevisto durante il caricamento della pagina.
-        {error.message && <> Dettaglio: {error.message}</>}
+        An unexpected error occurred while loading the page.
+        {error.message && <> Details: {error.message}</>}
       </p>
       <button
         onClick={reset}
         className="mt-4 rounded-md border border-red-700 px-4 py-2 text-sm font-medium text-red-200 hover:bg-red-900/40"
       >
-        Riprova
+        Retry
       </button>
     </div>
   );
